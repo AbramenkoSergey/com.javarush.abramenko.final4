@@ -5,22 +5,26 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "city")
+@Table(schema = "world", name = "city")
 @Getter
 @Setter
 public class City {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
+    @Column(name = "id")
     private Integer id;
 
-    @Column(name = "name", nullable = false, length = 35)
+    @Column(name = "name")
     private String name;
 
-    @Column(name = "district", nullable = false, length = 20)
+    @ManyToOne
+    @JoinColumn(name = "country_id")
+    private Country country;
+
+    @Column(name = "district")
     private String district;
 
-    @Column(name = "population", nullable = false)
+    @Column(name = "population")
     private Integer population;
 
 /*    public Integer getId() {

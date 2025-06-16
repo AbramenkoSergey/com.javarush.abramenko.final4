@@ -35,7 +35,7 @@ public class Main {
         cityDAO = new CityDAO(sessionFactory);
         countryDAO = new CountryDAO(sessionFactory);
 
-        redisClient = prepareRedisClient();
+        redisClient = null;//prepareRedisClient();
         mapper = new ObjectMapper();
     }
 
@@ -48,6 +48,8 @@ public class Main {
                 .buildSessionFactory();
         return sessionFactory;
     }
+
+    ///////////////////////
     private void shutdown() {
         if (nonNull(sessionFactory)) {
             sessionFactory.close();
@@ -80,7 +82,6 @@ public class Main {
             res.setDistrict(city.getDistrict());
 
             Country country = city.getCountry();
-            Country country1 = city.
             res.setAlternativeCountryCode(country.getAlternativeCode());
             res.setContinent(country.getContinent());
             res.setCountryCode(country.getCode());
@@ -100,11 +101,13 @@ public class Main {
 
             return res;
         }).collect(Collectors.toList());
+
     }
 
     public static void main(String[] args) {
         Main main = new Main();
         List<City> cities = main.fetchData(main);
+
 
         main.shutdown();
 
