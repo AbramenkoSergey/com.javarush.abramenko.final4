@@ -1,7 +1,11 @@
 package org.example.com.javarush.domain;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.RedisURI;
+import io.lettuce.core.api.StatefulRedisConnection;
+import io.lettuce.core.api.sync.RedisStringCommands;
 import org.example.com.javarush.dao.CityDAO;
 import org.example.com.javarush.dao.CountryDAO;
 import org.example.com.javarush.domain.entity.City;
@@ -14,6 +18,7 @@ import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -35,7 +40,7 @@ public class Main {
         cityDAO = new CityDAO(sessionFactory);
         countryDAO = new CountryDAO(sessionFactory);
 
-        redisClient = null;//prepareRedisClient();
+        redisClient = prepareRedisClient();
         mapper = new ObjectMapper();
     }
 
@@ -49,8 +54,7 @@ public class Main {
         return sessionFactory;
     }
 
-    ///////////////////////
-    private void shutdown() {
+       private void shutdown() {
         if (nonNull(sessionFactory)) {
             sessionFactory.close();
         }
@@ -93,7 +97,7 @@ public class Main {
             Set<Language> languages = countryLanguages.stream().map(cl -> {
                 Language language = new Language();
                 language.setLanguage(cl.getLanguage());
-                language.setOfficial(cl.getOfficial());
+                language.setIsOfficial(cl.getIsOfficial());
                 language.setPercentage(cl.getPercentage());
                 return language;
             }).collect(Collectors.toSet());
@@ -103,11 +107,76 @@ public class Main {
         }).collect(Collectors.toList());
 
     }
+    private RedisClient prepareRedisClient() {
+        RedisClient redisClient = RedisClient.create(RedisURI.create("localhost", 6379));
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            System.out.println("\nConnected to Redis\n");
+        }
+        return redisClient;
+    }
+
+    private void pushToRedis(List<CityCountry> data) {
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            RedisStringCommands<String, String> sync = connection.sync();
+            for (CityCountry cityCountry : data) {
+                try {
+                    sync.set(String.valueOf(cityCountry.getId()), mapper.writeValueAsString(cityCountry));
+                } catch (JsonProcessingException e) {
+                    e.printStackTrace();
+                }
+            }
+
+        }
+    }
+    private void testRedisData(List<Integer> ids) {
+        try (StatefulRedisConnection<String, String> connection = redisClient.connect()) {
+            RedisStringCommands<String, String> sync = connection.sync();
+            for (Integer id : ids) {
+                String value = sync.get(String.valueOf(id));
+                try {
+                    mapper.readValue(value, CityCountry.class);
+                } catch (JsonProcessingException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+
+    private void testMysqlData(List<Integer> ids) {
+        try (Session session = sessionFactory.getCurrentSession()) {
+            session.beginTransaction();
+            for (Integer id : ids) {
+                City city = cityDAO.getById(id);
+                Set<CountryLanguage> languages = city.getCountry().getLanguages();
+            }
+            session.getTransaction().commit();
+        }
+    }
 
     public static void main(String[] args) {
         Main main = new Main();
-        List<City> cities = main.fetchData(main);
+        List<City> allCities = main.fetchData(main);
+        List<CityCountry> preparedData = main.transformData(allCities);
+        main.pushToRedis(preparedData);
 
+        //закроем текущую сессию, чтоб точно делать запрос к БД, а не вытянуть данные из кэша
+        main.sessionFactory.getCurrentSession().close();
+
+        //выбираем случайных 10 id городов
+        //так как мы не делали обработку невалидных ситуаций, используй существующие в БД id
+        ArrayList<Integer> ids = new ArrayList<>(Arrays.asList(3, 2545, 123, 4, 189, 89, 3458, 1189, 10, 102));
+
+        long startRedis = System.currentTimeMillis();
+        main.testRedisData(ids);
+        long stopRedis = System.currentTimeMillis();
+
+        long startMysql = System.currentTimeMillis();
+        main.testMysqlData(ids);
+        long stopMysql = System.currentTimeMillis();
+
+        System.out.printf("%s:\t%d ms\n", "Redis", (stopRedis - startRedis));
+        System.out.printf("%s:\t%d ms\n", "MySQL", (stopMysql - startMysql));
 
         main.shutdown();
 
